@@ -150,11 +150,16 @@ void checkInput() {
     }
     if (bEdge) {
         if (currentState == 0) {
+            // TODO: check if the piece selected is valid
             currentState = 1;
             prevCursorX = curCursorX;
             prevCursorY = curCursorY;
         }
         else if (currentState == 1) {
+            // TODO: check if the moved postion is valid
+            // TODO: kill any pieces between this piece and the new piece if jumping
+            // TODO: check if another jump can be made
+            // TODO: prevent the player from changing which piece they're moving if they've made a jump and can make another
             currentState = 0;
             uint8_t piece = getPieceAt(prevCursorX, prevCursorY);
             setPieceAt(curCursorX, curCursorY, piece);
