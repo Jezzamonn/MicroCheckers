@@ -15,9 +15,9 @@ Arduboy arduboy;
 // x00 -> 0 = regular piece, 1 = king piece
 uint8_t board[BOARD_SIZE * BOARD_SIZE];
 
-// 0 -> black (goes first)
-// 1 -> white
-uint8_t currentPlayer = 0;
+// 0 -> white
+// 1 -> black (goes first)
+uint8_t currentPlayer = 1;
 // 0 -> selecting a piece
 // 1 -> selecting a move
 uint8_t currentState = 0;
@@ -74,6 +74,8 @@ void checkInput() {
     bool downEdge = false;
     bool aEdge = false;
     bool bEdge = false;
+    
+    uint8_t piece;
 
     if (arduboy.pressed(LEFT_BUTTON)) {
         if (!leftPressed) {
@@ -150,17 +152,22 @@ void checkInput() {
     }
     if (bEdge) {
         if (currentState == 0) {
-            // TODO: check if the piece selected is valid
-            currentState = 1;
-            prevCursorX = curCursorX;
-            prevCursorY = curCursorY;
+            // TODO: check if there are any pieces that have to jump
+            piece = getPieceAt(curCursorX, curCursorY);
+            // piece & 1 -> there is a piece on this square
+            // !(piece & 2) == !currentPlayer -> the piece is the right color
+            if ((piece & 1) && !(piece & 2) == !currentPlayer) {
+                currentState = 1;
+                prevCursorX = curCursorX;
+                prevCursorY = curCursorY;
+            }
         }
         else if (currentState == 1) {
             // TODO: check if the moved postion is valid
             // TODO: check if another jump can be made
             // TODO: prevent the player from changing which piece they're moving if they've made a jump and can make another
             currentState = 0;
-            uint8_t piece = getPieceAt(prevCursorX, prevCursorY);
+            piece = getPieceAt(prevCursorX, prevCursorY);
             setPieceAt(curCursorX, curCursorY, piece);
             // This will first clear the moved piece, and then clear any pieces that have been jumped over
             while (prevCursorX != curCursorX || prevCursorY != curCursorY) {
@@ -181,7 +188,6 @@ void checkInput() {
             currentPlayer = !currentPlayer;
         }
     }
-        
 }
 
 /* ------------- DRAWING ------------- */   
