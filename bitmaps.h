@@ -3,9 +3,9 @@
 
 #include <avr/pgmspace.h>
 
-extern const unsigned char king1[];
-extern const unsigned char king2[];
-extern const unsigned char piece1[];
-extern const unsigned char piece2[];
+extern const unsigned char blackKing[];
+extern const unsigned char blackPiece[];
+extern const unsigned char whiteKing[];
+extern const unsigned char whitePiece[];
 
 #endif // BITMAPS_H

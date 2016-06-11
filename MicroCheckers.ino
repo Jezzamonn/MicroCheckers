@@ -7,7 +7,8 @@ Arduboy arduboy;
 #define PIECE_SIZE 8
 #define X_OFFSET    ((WIDTH - BOARD_SIZE * PIECE_SIZE) / 2)
 
-
+#define PLAYER_WHITE 0
+#define PLAYER_BLACK 1
 
 // key, last three bits:
 // 00x -> 0 = no piece there, 1 = piece there
@@ -17,7 +18,7 @@ uint8_t board[BOARD_SIZE * BOARD_SIZE];
 
 // 0 -> white
 // 1 -> black (goes first)
-uint8_t currentPlayer = 1;
+uint8_t currentPlayer = PLAYER_BLACK;
 // 0 -> selecting a piece
 // 1 -> selecting a move
 uint8_t currentState = 0;
@@ -37,12 +38,40 @@ bool downPressed = false;
 bool aPressed = false;
 bool bPressed = false;
 
+int8_t diagonalDistance(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2) {
+    int8_t xDist = x1 - x2;
+    if (xDist < 0) {
+        xDist = -xDist;
+    }
+    int8_t yDist = y1 - y2;
+    if (yDist < 0) {
+        yDist = -yDist;
+    }
+    
+    if (xDist == yDist) {
+        return xDist;
+    }
+    return -1;
+}
+
 uint8_t getPieceAt(uint8_t x, uint8_t y) {
     return board[y * BOARD_SIZE + x];
 }
 
 uint8_t setPieceAt(uint8_t x, uint8_t y, uint8_t value) {
     board[y * BOARD_SIZE + x] = value;
+}
+
+bool pieceIsEmpty(uint8_t piece) {
+    return !(piece & 1);
+}
+
+bool getPiecePlayer(uint8_t piece) {
+    return (piece >> 1) & 1;
+}
+
+bool pieceIsKing(uint8_t piece) {
+    return (piece >> 2) & 1;
 }
 
 void initBoard() {
@@ -151,40 +180,89 @@ void checkInput() {
         currentState = 0;
     }
     if (bEdge) {
+        
         if (currentState == 0) {
-            // TODO: check if there are any pieces that have to jump
             piece = getPieceAt(curCursorX, curCursorY);
-            // piece & 1 -> there is a piece on this square
-            // !(piece & 2) == !currentPlayer -> the piece is the right color
-            if ((piece & 1) && !(piece & 2) == !currentPlayer) {
-                currentState = 1;
-                prevCursorX = curCursorX;
-                prevCursorY = curCursorY;
+            // TODO: check if there are any pieces that have to jump
+            if (pieceIsEmpty(piece) || getPiecePlayer(piece) != currentPlayer) {
+                return;
             }
+            currentState = 1;
+            prevCursorX = curCursorX;
+            prevCursorY = curCursorY;
         }
         else if (currentState == 1) {
-            // TODO: check if the moved postion is valid
+            piece = getPieceAt(prevCursorX, prevCursorY);
+            
+            //Serial.print("(");
+            //Serial.print(prevCursorX);
+            //Serial.print(",");
+            //Serial.print(prevCursorY);
+            //Serial.print(") -> (");
+            //Serial.print(curCursorX);
+            //Serial.print(",");
+            //Serial.print(curCursorY);
+            //Serial.println(")");
+            
+            //Serial.print("Empty: ");
+            //Serial.println(pieceIsEmpty(piece) ? "Yes" : "No");
+            //Serial.print("Player: ");
+            //Serial.println(getPiecePlayer(piece) == PLAYER_BLACK ? "Black" : "White");
+            //Serial.print("Type: ");
+            //Serial.println(pieceIsKing(piece) ? "King" : "No King");
+            //Serial.print("Current Player: ");
+            //Serial.println(currentPlayer == PLAYER_BLACK ? "Black" : "White");
+            
+            // Check if the move is valid
+            uint8_t dist = diagonalDistance(prevCursorX, prevCursorY, curCursorX, curCursorY);
+            bool movingUp = curCursorY < prevCursorY;
+            uint8_t middleX = (prevCursorX + curCursorX) / 2;
+            uint8_t middleY = (prevCursorY + curCursorY) / 2;
+            uint8_t jumpedPiece = getPieceAt(middleX, middleY);
+            
+            // In any situation, you can only move onto an empty square
+            if (!pieceIsEmpty(getPieceAt(curCursorX, curCursorY))) {
+                Serial.println("Can't move to taken square!");
+                return;
+            }
+            
+            // Non king pieces can't move backwards
+            if (!pieceIsKing(piece)) {
+                // If it's a black piece trying to move down, or a white piece trying to move up, stop it!
+                if ((getPiecePlayer(piece) == PLAYER_BLACK && !movingUp) ||
+                    (getPiecePlayer(piece) == PLAYER_WHITE && movingUp)) {
+                    
+                    Serial.println("Non king can't move backways!");
+                    return;
+                }
+            }
+            
+            // Moving one unit diagonally is ok
+            if (dist == 1) {
+            }
+            // jumping over a piece, requires the piece being jumped over to be the opposite color.
+            else if (dist == 2) {
+                if (pieceIsEmpty(jumpedPiece) || getPiecePlayer(jumpedPiece) == currentPlayer) {
+                    Serial.println("Need a piece to jump over!");
+                    return;
+                }
+            }
+            else {
+                Serial.println("Moving way too far!");
+                return;
+            }
+            
             // TODO: check if another jump can be made
             // TODO: prevent the player from changing which piece they're moving if they've made a jump and can make another
             currentState = 0;
-            piece = getPieceAt(prevCursorX, prevCursorY);
             setPieceAt(curCursorX, curCursorY, piece);
-            // This will first clear the moved piece, and then clear any pieces that have been jumped over
-            while (prevCursorX != curCursorX || prevCursorY != curCursorY) {
-                setPieceAt(prevCursorX, prevCursorY, 0);
-                if (prevCursorX < curCursorX) {
-                    prevCursorX ++;
-                }
-                else if (prevCursorX > curCursorX) {
-                    prevCursorX --;
-                }
-                if (prevCursorY < curCursorY) {
-                    prevCursorY ++;
-                }
-                else if (prevCursorY > curCursorY) {
-                    prevCursorY --;
-                }
+            // Clear the previous position of the piece
+            setPieceAt(prevCursorX, prevCursorY, 0);
+            if (dist == 2) {
+                // Clear the piece that was jumped over.
+                setPieceAt(middleX, middleY, 0);
             }
+            
             currentPlayer = !currentPlayer;
         }
     }
@@ -203,17 +281,17 @@ void drawBoard() {
             uint8_t piece = getPieceAt(x, y);
             const unsigned char *bitmap = NULL;
             switch (piece) {
-                case 1:
-                    bitmap = piece1;
+                case 0b001:
+                    bitmap = whitePiece;
                     break;
-                case 3:
-                    bitmap = piece2;
+                case 0b011:
+                    bitmap = blackPiece;
                     break;
-                case 5:
-                    bitmap = king1;
+                case 0b101:
+                    bitmap = whiteKing;
                     break;
-                case 7:
-                    bitmap = king2;
+                case 0b111:
+                    bitmap = blackPiece;
                     break;
             }
             if (bitmap == NULL) {
@@ -256,6 +334,8 @@ void draw() {
 void setup() {
     arduboy.begin();
     arduboy.setFrameRate(60);
+    
+    Serial.begin(9600);
     
     initBoard();
 }
