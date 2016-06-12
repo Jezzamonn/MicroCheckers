@@ -130,6 +130,12 @@ bool pieceIsKing(uint8_t piece) {
     return (piece >> 2) & 1;
 }
 
+void makePieceKing(uint8_t x, uint8_t y) {
+    uint8_t piece = getPieceAt(x, y);
+    piece |= 0b100;
+    setPieceAt(x, y, piece);
+}
+
 bool somePieceCanJump(bool player) {
     uint8_t x;
     uint8_t y;
@@ -389,8 +395,15 @@ void tryMovePiece() {
         setPieceAt(middleX, middleY, 0);
     }
     
-    // end turn
-    if (dist == 1) {
+    // Check if the piece should become a king
+    Serial.println(curCursorY);
+    if (!pieceIsKing(piece) && (curCursorY == 0 || curCursorY == BOARD_SIZE - 1)) {
+        // You can't move onto your own edge, so we don't need to worry about what color the piece is.
+        makePieceKing(curCursorX, curCursorY);
+        playGotKingedUp();
+        startTurn(!currentPlayer);
+    }
+    else if (dist == 1) {
         playPieceMove();
         startTurn(!currentPlayer);
     }
@@ -449,7 +462,7 @@ void drawBoard() {
                     bitmap = whiteKing;
                     break;
                 case BLACK_KING:
-                    bitmap = blackPiece;
+                    bitmap = blackKing;
                     break;
             }
             if (bitmap == NULL) {
@@ -493,7 +506,7 @@ void drawCursorAt(uint8_t x, uint8_t y, bool flashOnTrue) {
 #define NOTE_D5  587
 
 void playInvalidSound() {
-    arduboy.tunes.tone(NOTE_A3, 40);
+    arduboy.tunes.tone(NOTE_A3, 20);
 }
 
 void playPieceSelect() {
@@ -504,14 +517,23 @@ void playPieceMove() {
     arduboy.tunes.tone(NOTE_Fs4, 40);
 }
 
+void playCaptureAndContinue() {
+    arduboy.tunes.tone(NOTE_A4, 40);
+}
+
 void playCaptureDone() {
     arduboy.tunes.tone(NOTE_B4, 40);
     delay(40);
     arduboy.tunes.tone(NOTE_D5, 80);
 }
 
-void playCaptureAndContinue() {
-    arduboy.tunes.tone(NOTE_A4, 40);
+void playGotKingedUp() {
+    uint16_t notes[] = {NOTE_D4, NOTE_Fs4, NOTE_A4, NOTE_B4, NOTE_D5};
+    uint8_t i;
+    for (i = 0; i < 5; i ++) {
+        arduboy.tunes.tone(notes[i], 40);
+        delay(40);
+    }
 }
 //}
 
