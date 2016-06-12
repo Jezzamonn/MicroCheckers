@@ -315,6 +315,10 @@ void trySelectPiece() {
         playInvalidSound();
         return;
     }
+    if (mustJump && !pieceAtCoordCanJump(curCursorX, curCursorY)) {
+        playInvalidSound();
+        return;
+    }
     currentState = 1;
     prevCursorX = curCursorX;
     prevCursorY = curCursorY;
