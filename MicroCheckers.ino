@@ -1,19 +1,19 @@
 #include <Arduboy.h>
 #include "bitmaps.h"
 
-Arduboy arduboy;
-
 #define BOARD_SIZE 8
 #define PIECE_SIZE 8
 #define X_OFFSET    ((WIDTH - BOARD_SIZE * PIECE_SIZE) / 2)
 
-#define PLAYER_WHITE 0
-#define PLAYER_BLACK 1
+#define PLAYER_WHITE (false)
+#define PLAYER_BLACK (true)
 
 #define WHITE_PIECE 0b001
 #define BLACK_PIECE 0b011
 #define WHITE_KING 0b101
 #define BLACK_KING 0b111
+
+Arduboy arduboy;
 
 // key, last three bits:
 // 00x -> 0 = no piece there, 1 = piece there
@@ -27,6 +27,8 @@ uint8_t currentPlayer = PLAYER_BLACK;
 // 0 -> selecting a piece
 // 1 -> selecting a move
 uint8_t currentState = 0;
+bool canCancel = true;
+bool mustJump = false;
 
 uint8_t curCursorX = 0;
 uint8_t curCursorY = 0;
@@ -43,40 +45,33 @@ bool downPressed = false;
 bool aPressed = false;
 bool bPressed = false;
 
-int8_t diagonalDistance(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2) {
-    int8_t xDist = x1 - x2;
-    if (xDist < 0) {
-        xDist = -xDist;
+/* ------------- HELPERS ------------- */
+//{
+void delayForFrames(uint8_t n) {
+    while (n > 0) {
+        while(!(arduboy.nextFrame()));
+        n --;
     }
-    int8_t yDist = y1 - y2;
-    if (yDist < 0) {
-        yDist = -yDist;
-    }
-    
-    if (xDist == yDist) {
-        return xDist;
-    }
-    return -1;
 }
 
+void printPoint(int16_t x, int16_t y) {
+    Serial.print("(");
+    Serial.print(x);
+    Serial.print(",");
+    Serial.print(y);
+    Serial.print(")");
+}
+//}
+
+
+/* ------------- BOARD FUNCTIONS ------------- */
+//{
 uint8_t getPieceAt(uint8_t x, uint8_t y) {
     return board[y * BOARD_SIZE + x];
 }
 
 uint8_t setPieceAt(uint8_t x, uint8_t y, uint8_t value) {
     board[y * BOARD_SIZE + x] = value;
-}
-
-bool pieceIsEmpty(uint8_t piece) {
-    return !(piece & 1);
-}
-
-bool getPiecePlayer(uint8_t piece) {
-    return (piece >> 1) & 1;
-}
-
-bool pieceIsKing(uint8_t piece) {
-    return (piece >> 2) & 1;
 }
 
 void initBoard() {
@@ -97,13 +92,123 @@ void initBoard() {
         // Add black pieces to every second square at the bottom
         for (y = BOARD_SIZE - 3; y < BOARD_SIZE; y ++) {
             if ((x ^ y) & 1) {
-                setPieceAt(x, y, );
+                setPieceAt(x, y, BLACK_PIECE);
             }
         }
     }
 }
 
+int8_t diagonalDistance(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2) {
+    int8_t xDist = x1 - x2;
+    if (xDist < 0) {
+        xDist = -xDist;
+    }
+    int8_t yDist = y1 - y2;
+    if (yDist < 0) {
+        yDist = -yDist;
+    }
+    
+    if (xDist == yDist) {
+        return xDist;
+    }
+    return -1;
+}
+
+bool coordOnBoard(uint8_t x, uint8_t y) {
+    return x >= 0 && y >= 0 && x < BOARD_SIZE && y < BOARD_SIZE;
+}
+
+bool pieceIsEmpty(uint8_t piece) {
+    return !(piece & 1);
+}
+
+bool getPiecePlayer(uint8_t piece) {
+    return (piece >> 1) & 1;
+}
+
+bool pieceIsKing(uint8_t piece) {
+    return (piece >> 2) & 1;
+}
+
+bool somePieceCanJump(bool player) {
+    uint8_t x;
+    uint8_t y;
+    for (x = 0; x < BOARD_SIZE; x ++) {
+        for (y = 0; y < BOARD_SIZE; y ++) {
+            uint8_t piece = getPieceAt(x, y);
+            if (pieceIsEmpty(piece) || getPiecePlayer(piece) != player) {
+                continue;
+            }
+            if (pieceAtCoordCanJump(x, y)) {
+                Serial.print("A piece can jump! At ");
+                printPoint(x, y);
+                Serial.println();
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool pieceAtCoordCanJump(uint8_t x, uint8_t y) {
+    // assumes there is a piece at this position
+    uint8_t piece = getPieceAt(x, y);
+    
+    // check moving up
+    if (pieceIsKing(piece)) {
+        // jumping up or down
+        return pieceAtCoordCanJumpInDir(x, y, -1, -1) ||
+               pieceAtCoordCanJumpInDir(x, y,  1, -1) ||
+               pieceAtCoordCanJumpInDir(x, y, -1, 1) ||
+               pieceAtCoordCanJumpInDir(x, y,  1, 1);
+    }
+    else if (getPiecePlayer(piece) == PLAYER_BLACK) {
+        // jumping up only
+        return pieceAtCoordCanJumpInDir(x, y, -1, -1) ||
+               pieceAtCoordCanJumpInDir(x, y,  1, -1);
+    }
+    else { // PLAYER_WHITE
+        // jumping down only
+        return pieceAtCoordCanJumpInDir(x, y, -1, 1) ||
+               pieceAtCoordCanJumpInDir(x, y,  1, 1);
+    }
+}
+
+bool pieceAtCoordCanJumpInDir(uint8_t x, uint8_t y, int8_t xDir, int8_t yDir) {
+    // assumes there is a piece at this position
+    uint8_t piece = getPieceAt(x, y);
+    uint8_t jumpedX = x + xDir;
+    uint8_t jumpedY = y + yDir;
+    uint8_t landX = jumpedX + xDir;
+    uint8_t landY = jumpedY + yDir;
+    
+    // can't jump off the board!
+    if (!coordOnBoard(jumpedX, jumpedY) || !coordOnBoard(landX, landY)) {
+        return false;
+    }
+    
+    uint8_t jumpedPiece = getPieceAt(jumpedX, jumpedY);
+    uint8_t landPiece = getPieceAt(landX, landY);
+    
+    return !pieceIsEmpty(jumpedPiece) &&
+           pieceIsEmpty(landPiece) &&
+           getPiecePlayer(piece) != getPiecePlayer(jumpedPiece);
+}
+
+bool pieceAtCoordCanMoveInDir(uint8_t x, uint8_t y, int8_t xDir, int8_t yDir) {
+    uint8_t moveX = x + xDir;
+    uint8_t moveY = y + yDir;
+    if (!coordOnBoard(moveX, moveY)) {
+        return false;
+    }
+    uint8_t movePosition = getPieceAt(moveX, moveY);
+    
+    return pieceIsEmpty(movePosition);
+}
+//}
+
 /* ------------- LOGIC ------------- */
+//{
 void checkInput() {
     bool leftEdge = false;
     bool rightEdge = false;
@@ -185,7 +290,12 @@ void checkInput() {
     curCursorY &= 0x7;
     
     if (aEdge) { // Back
-        currentState = 0;
+        if (canCancel) {
+            currentState = 0;
+        }
+        else {
+            playInvalidSound();
+        }
     }
     if (bEdge) {
         
@@ -202,11 +312,14 @@ void trySelectPiece() {
     uint8_t piece = getPieceAt(curCursorX, curCursorY);
     // TODO: check if there are any pieces that have to jump
     if (pieceIsEmpty(piece) || getPiecePlayer(piece) != currentPlayer) {
+        playInvalidSound();
         return;
     }
     currentState = 1;
     prevCursorX = curCursorX;
     prevCursorY = curCursorY;
+    
+    playPieceSelect();
 }
 
 void tryMovePiece() {
@@ -218,6 +331,7 @@ void tryMovePiece() {
     // In any situation, you can only move onto an empty square
     if (!pieceIsEmpty(getPieceAt(curCursorX, curCursorY))) {
         Serial.println("Can't move to taken square!");
+        playInvalidSound();
         return;
     }
     
@@ -229,6 +343,7 @@ void tryMovePiece() {
             (getPiecePlayer(piece) == PLAYER_WHITE && movingUp)) {
             
             Serial.println("Non king can't move backways!");
+            playInvalidSound();
             return;
         }
     }
@@ -238,24 +353,30 @@ void tryMovePiece() {
     uint8_t middleX = (prevCursorX + curCursorX) / 2;
     uint8_t middleY = (prevCursorY + curCursorY) / 2;
     uint8_t jumpedPiece = getPieceAt(middleX, middleY);
-    // Moving one unit diagonally is ok
+    // Moving one unit diagonally
     if (dist == 1) {
-        // Dont need any extra checks
+        // If there is a jump, then you can't just move one piece.
+        if (mustJump) {
+            Serial.println("You must jump!");
+            playInvalidSound();
+            return;
+        }
     }
     // jumping over a piece requires the piece being jumped over to be the opposite color.
     else if (dist == 2) {
         if (pieceIsEmpty(jumpedPiece) || getPiecePlayer(jumpedPiece) == currentPlayer) {
             Serial.println("Need a piece to jump over!");
+            playInvalidSound();
             return;
         }
     }
     else {
         Serial.println("Moving way too far!");
+        playInvalidSound();
         return;
     }
     
     // -- Make the move --
-    currentState = 0;
     setPieceAt(curCursorX, curCursorY, piece);
     // Clear the previous position of the piece
     setPieceAt(prevCursorX, prevCursorY, 0);
@@ -264,10 +385,44 @@ void tryMovePiece() {
         setPieceAt(middleX, middleY, 0);
     }
     
-    currentPlayer = !currentPlayer;
+    // end turn
+    if (dist == 1) {
+        playPieceMove();
+        startTurn(!currentPlayer);
+    }
+    else if (dist == 2) {
+        Serial.println();
+        if (pieceAtCoordCanJump(curCursorX, curCursorY)) {
+            playCaptureAndContinue();
+            // stay in this state
+            canCancel = false;
+            prevCursorX = curCursorX;
+            prevCursorY = curCursorY;
+        }
+        else {
+            playCaptureDone();
+            startTurn(!currentPlayer);
+        }
+    }
 }
 
-/* ------------- DRAWING ------------- */   
+void startTurn(bool player) {
+    currentPlayer = player;
+    currentState = 0;
+    canCancel = true;
+    mustJump = somePieceCanJump(player);
+}
+//}
+
+/* ------------- DRAWING ------------- */
+//{
+void draw() {
+    arduboy.clear();
+    drawBoard();
+    drawCursor();
+    arduboy.display();
+}
+
 void drawBoard() {
     uint8_t x;
     uint8_t y;
@@ -322,21 +477,51 @@ void drawCursorAt(uint8_t x, uint8_t y, bool flashOnTrue) {
     arduboy.fillRect(X_OFFSET + x * PIECE_SIZE, y * PIECE_SIZE,
         PIECE_SIZE, PIECE_SIZE, color);
 }
+//}
 
-void draw() {
-    arduboy.clear();
-    drawBoard();
-    drawCursor();
-    arduboy.display();
+/* ------------- SFX ------------- */
+//{
+#define NOTE_A3  220
+#define NOTE_D4  294
+#define NOTE_Fs4 369
+#define NOTE_A4  440
+#define NOTE_B4  494
+#define NOTE_D5  587
+
+void playInvalidSound() {
+    arduboy.tunes.tone(NOTE_A3, 40);
 }
 
+void playPieceSelect() {
+    arduboy.tunes.tone(NOTE_D4, 40);
+}
+
+void playPieceMove() {
+    arduboy.tunes.tone(NOTE_Fs4, 40);
+}
+
+void playCaptureDone() {
+    arduboy.tunes.tone(NOTE_B4, 40);
+    delay(40);
+    arduboy.tunes.tone(NOTE_D5, 80);
+}
+
+void playCaptureAndContinue() {
+    arduboy.tunes.tone(NOTE_A4, 40);
+}
+//}
+
+/* ------------- SET UP AND SUCH ------------- */
+//{
 void setup() {
     arduboy.begin();
     arduboy.setFrameRate(60);
+    arduboy.audio.on();
     
     Serial.begin(9600);
     
     initBoard();
+    startTurn(PLAYER_BLACK);
 }
 
 void loop() {
@@ -348,3 +533,4 @@ void loop() {
     checkInput();
     draw();
 }
+//}
