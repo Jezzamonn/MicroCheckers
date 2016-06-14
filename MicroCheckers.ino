@@ -13,6 +13,8 @@
 #define WHITE_KING 0b101
 #define BLACK_KING 0b111
 
+#define PRINT_DEBUG
+
 Arduboy arduboy;
 
 // key, last three bits:
@@ -45,6 +47,10 @@ bool downPressed = false;
 bool aPressed = false;
 bool bPressed = false;
 
+#define NAME_LENGTH 5
+char blackPlayerName[] = "Black";
+char whitePlayerName[] = "White";
+
 /* ------------- HELPERS ------------- */
 //{
 void delayForFrames(uint8_t n) {
@@ -54,6 +60,7 @@ void delayForFrames(uint8_t n) {
     }
 }
 
+#ifdef PRINT_DEBUG
 void printPoint(int16_t x, int16_t y) {
     Serial.print("(");
     Serial.print(x);
@@ -61,6 +68,7 @@ void printPoint(int16_t x, int16_t y) {
     Serial.print(y);
     Serial.print(")");
 }
+#endif // PRINT_DEBUG
 //}
 
 
@@ -146,9 +154,11 @@ bool somePieceCanJump(bool player) {
                 continue;
             }
             if (pieceAtCoordCanJump(x, y)) {
+                #ifdef PRINT_DEBUG
                 Serial.print("A piece can jump! At ");
                 printPoint(x, y);
                 Serial.println();
+                #endif // PRINT_DEBUG
                 return true;
             }
         }
@@ -340,7 +350,9 @@ void tryMovePiece() {
     // -- Check if the move is valid --
     // In any situation, you can only move onto an empty square
     if (!pieceIsEmpty(getPieceAt(curCursorX, curCursorY))) {
+        #ifdef PRINT_DEBUG
         Serial.println("Can't move to taken square!");
+        #endif // PRINT_DEBUG
         playInvalidSound();
         return;
     }
@@ -352,7 +364,9 @@ void tryMovePiece() {
         if ((getPiecePlayer(piece) == PLAYER_BLACK && !movingUp) ||
             (getPiecePlayer(piece) == PLAYER_WHITE && movingUp)) {
             
+            #ifdef PRINT_DEBUG
             Serial.println("Non king can't move backways!");
+            #endif // PRINT_DEBUG
             playInvalidSound();
             return;
         }
@@ -367,7 +381,9 @@ void tryMovePiece() {
     if (dist == 1) {
         // If there is a jump, then you can't just move one piece.
         if (mustJump) {
+            #ifdef PRINT_DEBUG
             Serial.println("You must jump!");
+            #endif // PRINT_DEBUG
             playInvalidSound();
             return;
         }
@@ -375,13 +391,17 @@ void tryMovePiece() {
     // jumping over a piece requires the piece being jumped over to be the opposite color.
     else if (dist == 2) {
         if (pieceIsEmpty(jumpedPiece) || getPiecePlayer(jumpedPiece) == currentPlayer) {
+            #ifdef PRINT_DEBUG
             Serial.println("Need a piece to jump over!");
+            #endif // PRINT_DEBUG
             playInvalidSound();
             return;
         }
     }
     else {
+        #ifdef PRINT_DEBUG
         Serial.println("Moving way too far!");
+        #endif // PRINT_DEBUG
         playInvalidSound();
         return;
     }
@@ -396,7 +416,6 @@ void tryMovePiece() {
     }
     
     // Check if the piece should become a king
-    Serial.println(curCursorY);
     if (!pieceIsKing(piece) && (curCursorY == 0 || curCursorY == BOARD_SIZE - 1)) {
         // You can't move onto your own edge, so we don't need to worry about what color the piece is.
         makePieceKing(curCursorX, curCursorY);
@@ -408,7 +427,6 @@ void tryMovePiece() {
         startTurn(!currentPlayer);
     }
     else if (dist == 2) {
-        Serial.println();
         if (pieceAtCoordCanJump(curCursorX, curCursorY)) {
             playCaptureAndContinue();
             // stay in this state
@@ -437,6 +455,7 @@ void draw() {
     arduboy.clear();
     drawBoard();
     drawCursor();
+    drawPlayer();
     arduboy.display();
 }
 
@@ -494,6 +513,15 @@ void drawCursorAt(uint8_t x, uint8_t y, bool flashOnTrue) {
     arduboy.fillRect(X_OFFSET + x * PIECE_SIZE, y * PIECE_SIZE,
         PIECE_SIZE, PIECE_SIZE, color);
 }
+
+void drawPlayer() {
+    arduboy.setCursor(1, 1);
+    char* playerText = currentPlayer == PLAYER_BLACK ? blackPlayerName : whitePlayerName;
+    uint8_t i;
+    for (i = 0; i < NAME_LENGTH; i ++) {
+        arduboy.write(playerText[i]);
+    }
+}
 //}
 
 /* ------------- SFX ------------- */
@@ -544,7 +572,9 @@ void setup() {
     arduboy.setFrameRate(60);
     arduboy.audio.on();
     
+    #ifdef PRINT_DEBUG
     Serial.begin(9600);
+    #endif // PRINT_DEBUG
     
     initBoard();
     startTurn(PLAYER_BLACK);
