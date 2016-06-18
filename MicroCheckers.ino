@@ -45,7 +45,7 @@ uint8_t prevCursorY = 0;
 
 uint8_t frameCount = 0;
 
-uint8_t char_start = 0;
+uint8_t aiCount = 0;
 
 bool leftPressed = false;
 bool rightPressed = false;
@@ -398,6 +398,28 @@ void updateGameInput(bool leftEdge, bool rightEdge, bool upEdge, bool downEdge, 
     }
     if (downEdge) {
         curCursorY ++;
+    }
+    
+    if (currentPlayer == PLAYER_WHITE) {
+        if (aiCount) {
+            curCursorX = rand();
+            curCursorY = rand();
+            aEdge = true;
+        }
+        else {
+            int8_t r = rand() % 2;
+            r ++;
+            if (rand() & 1) {
+                r = -r;
+            }
+            curCursorX += r;
+            if (rand() & 1) {
+                r = -r;
+            }
+            curCursorY += r;
+        }
+        aiCount = !aiCount;
+        bEdge = true;
     }
     // Make sure the cursor stays on the board (i.e. with the range 0-7)
     curCursorX &= 0x7;
