@@ -23,12 +23,17 @@ Arduboy arduboy;
 // x00 -> 0 = regular piece, 1 = king piece
 uint8_t board[BOARD_SIZE * BOARD_SIZE];
 
+#define STATE_TITLE 0
+#define STATE_GAME 1
+#define STATE_INSTR 2
+uint8_t gameState = STATE_TITLE;
+
 // 0 -> white
 // 1 -> black (goes first)
 uint8_t currentPlayer = PLAYER_BLACK;
 // 0 -> selecting a piece
 // 1 -> selecting a move
-uint8_t currentState = 0;
+uint8_t currentMoveState = 0;
 bool canCancel = true;
 bool mustJump = false;
 
@@ -39,6 +44,8 @@ uint8_t prevCursorX = 0;
 uint8_t prevCursorY = 0;
 
 uint8_t frameCount = 0;
+
+uint8_t char_start = 0;
 
 bool leftPressed = false;
 bool rightPressed = false;
@@ -58,6 +65,24 @@ void delayForFrames(uint8_t n) {
         while(!(arduboy.nextFrame()));
         n --;
     }
+}
+
+void writeText(uint8_t x, uint8_t y, char* message) {
+    arduboy.setCursor(x, y);
+    uint16_t i;
+    for (i = 0; message[i] != 0; i ++) {
+        arduboy.write(message[i]);
+    }
+}
+
+void writeOption(uint8_t x, uint8_t y, char* message, bool selected) {
+    if (selected) {
+        message[0] = (frameCount & 8) ? 0x07 : 0x09;
+    }
+    else {
+        message[0] = ' ';
+    }
+    writeText(x, y, message);
 }
 
 #ifdef PRINT_DEBUG
@@ -221,10 +246,45 @@ bool pieceAtCoordCanMoveInDir(uint8_t x, uint8_t y, int8_t xDir, int8_t yDir) {
     
     return pieceIsEmpty(movePosition);
 }
+
+bool hasPieceOnBoard(bool player) {
+    uint8_t x;
+    uint8_t y;
+    for (x = 0; x < BOARD_SIZE; x ++) {
+        for (y = 0; y < BOARD_SIZE; y ++) {
+            uint8_t piece = getPieceAt(x, y);
+            if (!pieceIsEmpty(piece) && getPiecePlayer(piece) == player) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 //}
 
 /* ------------- LOGIC ------------- */
 //{
+void update() {
+    checkInput();
+}
+
+void switchState(uint8_t state) {
+    switch (state) {
+        case STATE_GAME:
+            initBoard();
+            curCursorX = BOARD_SIZE / 2;
+            curCursorY = BOARD_SIZE / 2;
+            startTurn(PLAYER_BLACK);
+            break;
+        case STATE_INSTR:
+            break;
+        case STATE_TITLE:
+            currentMoveState = 0;
+            break;
+    }
+    gameState = state;
+}
+
 void checkInput() {
     bool leftEdge = false;
     bool rightEdge = false;
@@ -288,6 +348,44 @@ void checkInput() {
         bPressed = false;
     }
     
+    switch (gameState) {
+        case STATE_TITLE:
+            updateMenuInput(leftEdge, rightEdge, upEdge, downEdge, aEdge, bEdge);
+            break;
+        case STATE_GAME:
+            updateGameInput(leftEdge, rightEdge, upEdge, downEdge, aEdge, bEdge);
+            break;
+        case STATE_INSTR:
+            updateInstrInput(leftEdge, rightEdge, upEdge, downEdge, aEdge, bEdge);
+            break;
+    }
+}
+
+void updateMenuInput(bool leftEdge, bool rightEdge, bool upEdge, bool downEdge, bool aEdge, bool bEdge) {
+    if (upEdge && currentMoveState > 0) {
+        currentMoveState --;
+    }
+    if (downEdge && currentMoveState < 1) {
+        currentMoveState ++;
+    }
+    
+    if (bEdge) {
+        if (currentMoveState == 0) {
+            switchState(STATE_GAME);
+        }
+        else {
+            switchState(STATE_INSTR);
+        }
+    }
+}
+
+void updateInstrInput(bool leftEdge, bool rightEdge, bool upEdge, bool downEdge, bool aEdge, bool bEdge) {
+    if (aEdge || bEdge) {
+        switchState(STATE_TITLE);
+    }
+}
+
+void updateGameInput(bool leftEdge, bool rightEdge, bool upEdge, bool downEdge, bool aEdge, bool bEdge) {
     // Move cursor
     if (leftEdge) {
         curCursorX --;
@@ -307,18 +405,20 @@ void checkInput() {
     
     if (aEdge) { // Back
         if (canCancel) {
-            currentState = 0;
+            currentMoveState = 0;
         }
         else {
             playInvalidSound();
         }
     }
     if (bEdge) {
-        
-        if (currentState == 0) {
+        if (!hasPieceOnBoard(currentPlayer)) {
+            switchState(STATE_TITLE);
+        }
+        else if (currentMoveState == 0) {
             trySelectPiece();
         }
-        else if (currentState == 1) {
+        else if (currentMoveState == 1) {
             tryMovePiece();
         }
     }
@@ -335,7 +435,7 @@ void trySelectPiece() {
         playInvalidSound();
         return;
     }
-    currentState = 1;
+    currentMoveState = 1;
     prevCursorX = curCursorX;
     prevCursorY = curCursorY;
     
@@ -443,7 +543,7 @@ void tryMovePiece() {
 
 void startTurn(bool player) {
     currentPlayer = player;
-    currentState = 0;
+    currentMoveState = 0;
     canCancel = true;
     mustJump = somePieceCanJump(player);
 }
@@ -453,10 +553,40 @@ void startTurn(bool player) {
 //{
 void draw() {
     arduboy.clear();
-    drawBoard();
-    drawCursor();
-    drawPlayer();
+    switch (gameState) {
+        case STATE_TITLE:
+            drawMenu();
+            break;
+        case STATE_GAME:
+            drawBoard();
+            drawCursor();
+            drawPlayer();
+            break;
+        case STATE_INSTR:
+            drawInstructions();
+            break;
+       
+    }
     arduboy.display();
+}
+
+void drawMenu() {
+    writeText(25, 10, "MicroCheckers");
+    
+    writeOption(30, 30, " Start", currentMoveState == 0);
+    writeOption(30, 40, " Instructions", currentMoveState == 1); 
+}
+
+void drawInstructions() {
+    char* instructions = "Use the arrow keys to\n"
+                         "move the cursor.\n"
+                         "Press B to select a\n"
+                         "piece, and press B on\n"
+                         "the square you want\n"
+                         "to move it to.\n"
+                         "Press A to cancel.\n"
+    ;
+    writeText(0, 1, instructions);
 }
 
 void drawBoard() {
@@ -497,7 +627,7 @@ void drawBoard() {
 
 void drawCursor() {
     drawCursorAt(curCursorX, curCursorY, true);
-    if (currentState == 1) {
+    if (currentMoveState == 1) {
         drawCursorAt(prevCursorX, prevCursorY, false);
     }
 }
@@ -515,12 +645,8 @@ void drawCursorAt(uint8_t x, uint8_t y, bool flashOnTrue) {
 }
 
 void drawPlayer() {
-    arduboy.setCursor(1, 1);
     char* playerText = currentPlayer == PLAYER_BLACK ? blackPlayerName : whitePlayerName;
-    uint8_t i;
-    for (i = 0; i < NAME_LENGTH; i ++) {
-        arduboy.write(playerText[i]);
-    }
+    writeText(0, 1, playerText);
 }
 //}
 
@@ -576,8 +702,7 @@ void setup() {
     Serial.begin(9600);
     #endif // PRINT_DEBUG
     
-    initBoard();
-    startTurn(PLAYER_BLACK);
+    gameState = STATE_TITLE;
 }
 
 void loop() {
@@ -586,7 +711,7 @@ void loop() {
 
     frameCount ++;
     
-    checkInput();
+    update();
     draw();
 }
 //}
